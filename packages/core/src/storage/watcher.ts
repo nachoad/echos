@@ -156,6 +156,10 @@ export function createFileWatcher(opts: WatcherOptions): FileWatcher {
 
   watcher.on('ready', () => rescanRecent(baseDir));
 
+  // [coco] chokidar 5 vigila cada directorio con fs.watch: los .md escritos en un directorio
+  // nuevo antes de que empiece a vigilarlo no emiten 'add'. Se escanea al detectarlo.
+  watcher.on('addDir', (dirPath) => rescanRecent(dirPath));
+
   watcher.on('error', (err) => {
     logger.error({ err }, 'File watcher error');
   });
