@@ -106,7 +106,10 @@ export function createFileWatcher(opts: WatcherOptions): FileWatcher {
   const isIgnored = (p: string): boolean =>
     ignoredPrefixes.some(prefix => basename(p).startsWith(prefix));
 
-  const watcher = chokidar.watch(`${baseDir}/**/*.md`, {
+  // [coco] chokidar >=4 no admite globs: se vigila el directorio y se filtran los .md
+  const watcher = chokidar.watch(baseDir, {
+    ignored: (p: string, stats?: { isFile(): boolean }) =>
+      isIgnored(p) || basename(p) === '.trash' || (stats?.isFile() === true && !p.endsWith('.md')),
     ignoreInitial: true,
     persistent: true,
     awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
