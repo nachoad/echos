@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { basename } from 'node:path';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import chokidar from 'chokidar';
 import matter from 'gray-matter';
 import type { Logger } from 'pino';
@@ -106,6 +106,30 @@ export function createFileWatcher(opts: WatcherOptions): FileWatcher {
   const isIgnored = (p: string): boolean =>
     ignoredPrefixes.some(prefix => basename(p).startsWith(prefix));
 
+  // [coco] Los cambios anteriores al evento 'ready' de chokidar se pierden. Al estar listo,
+  // se reindexan los .md modificados desde poco antes de crear el watcher.
+  const watchStartedAt = Date.now() - 5000;
+  function rescanRecent(dir: string): void {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name.startsWith('.')) continue;
+      const full = join(dir, e.name);
+      if (e.isDirectory()) rescanRecent(full);
+      else if (e.name.endsWith('.md')) {
+        try {
+          if (statSync(full).mtimeMs >= watchStartedAt) schedule(full, () => handleUpsert(full));
+        } catch {
+          /* borrado entretanto */
+        }
+      }
+    }
+  }
+
   // [coco] chokidar >=4 no admite globs: se vigila el directorio y se filtran los .md
   const watcher = chokidar.watch(baseDir, {
     ignored: (p: string, stats?: { isFile(): boolean }) =>
@@ -129,6 +153,8 @@ export function createFileWatcher(opts: WatcherOptions): FileWatcher {
     if (isIgnored(filePath)) return;
     schedule(filePath, () => handleUnlink(filePath));
   });
+
+  watcher.on('ready', () => rescanRecent(baseDir));
 
   watcher.on('error', (err) => {
     logger.error({ err }, 'File watcher error');

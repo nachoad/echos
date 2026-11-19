@@ -1,7 +1,7 @@
 // [coco] El watcher debe indexar los .md que se escriben directamente en knowledge/
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, renameSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createSqliteStorage, type SqliteStorage } from './sqlite.js';
 import { createMarkdownStorage, type MarkdownStorage } from './markdown.js';
@@ -77,4 +77,38 @@ describe('createFileWatcher', () => {
     );
     expect(await waitFor(() => sqlite.getNote('w-2') !== undefined)).toBe(true);
   });
+
+  it('indexes a burst of files written into a brand-new directory', async () => {
+    const dir = join(knowledgeDir, 'note', 'nueva');
+    mkdirSync(dir, { recursive: true });
+    const ids: string[] = [];
+    for (let i = 0; i < 40; i++) {
+      const id = `burst-${i}`;
+      ids.push(id);
+      // escritura atómica como la hace Coco: temporal oculto + rename
+      const tmp = join(dir, `.${id}.tmp`);
+      writeFileSync(
+        tmp,
+        `---\nid: "${id}"\ntype: note\ntitle: "N${i}"\ncreated: "2026-11-19T10:00:00.000Z"\nupdated: "2026-11-19T10:00:00.000Z"\ntags: []\nlinks: []\ncategory: nueva\n---\n\nNota ${i}\n`,
+      );
+      renameSync(tmp, join(dir, `2026-11-19-n${i}.md`));
+    }
+    const ok = await waitFor(() => ids.every((id) => sqlite.getNote(id) !== undefined), 8000);
+    expect(ok).toBe(true);
+  }, 15000);
+
+  it('indexes files written right after the watcher is created (before ready)', async () => {
+    await watcher.stop();
+    watcher = createFileWatcher({ baseDir: knowledgeDir, sqlite, vectorDb: noopVectorDb, markdown, generateEmbedding: async () => [], logger });
+    const dir = join(knowledgeDir, 'note', 'temprana');
+    mkdirSync(dir, { recursive: true });
+    const ids = Array.from({ length: 20 }, (_, i) => `early-${i}`);
+    ids.forEach((id, i) =>
+      writeFileSync(
+        join(dir, `n${i}.md`),
+        `---\nid: "${id}"\ntype: note\ntitle: "E${i}"\ncreated: "2026-11-19T10:00:00.000Z"\nupdated: "2026-11-19T10:00:00.000Z"\ntags: []\nlinks: []\ncategory: temprana\n---\n\nE ${i}\n`,
+      ),
+    );
+    expect(await waitFor(() => ids.every((id) => sqlite.getNote(id) !== undefined), 8000)).toBe(true);
+  }, 15000);
 });
