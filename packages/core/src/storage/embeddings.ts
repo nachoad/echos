@@ -12,6 +12,8 @@ export interface EmbeddingOptions {
   model?: string | undefined;
   /** Output vector dimensions. Must match LanceDB schema. text-embedding-3-* models support truncation via the OpenAI API. */
   dimensions?: number | undefined;
+  /** [coco] Base URL of an OpenAI-compatible embeddings API (e.g. Ollama http://127.0.0.1:11434/v1). Defaults to EMBEDDING_BASE_URL or OpenAI. */
+  baseUrl?: string | undefined;
   logger: Logger;
 }
 
@@ -26,14 +28,17 @@ export function createEmbeddingFn(
   options?: Partial<EmbeddingOptions>,
 ): (text: string) => Promise<number[]> {
   const dimensions = options?.dimensions ?? DEFAULT_DIMENSIONS;
+  // [coco] endpoint configurable; con un endpoint propio la clave es opcional
+  const customBaseUrl = options?.baseUrl ?? process.env['EMBEDDING_BASE_URL'];
+  const baseUrl = (customBaseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '');
 
-  if (!options?.openaiApiKey) {
+  if (!options?.openaiApiKey && !customBaseUrl) {
     options?.logger?.warn('No OpenAI API key — embeddings disabled (zero-vector stub)');
     return async (_text: string) => new Array(dimensions).fill(0);
   }
 
-  const { openaiApiKey, logger } = options;
-  const model = options.model ?? DEFAULT_MODEL;
+  const { openaiApiKey, logger } = options ?? {};
+  const model = options?.model ?? DEFAULT_MODEL;
 
   // Build request body — include `dimensions` param for models that support truncation
   const supportsTruncation = DIMENSION_TRUNCATION_MODELS.has(model);
@@ -57,11 +62,11 @@ export function createEmbeddingFn(
       body['dimensions'] = dimensions;
     }
 
-    const response = await fetch('https://api.openai.com/v1/embeddings', {
+    const response = await fetch(`${baseUrl}/embeddings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${openaiApiKey}`,
+        ...(openaiApiKey ? { Authorization: `Bearer ${openaiApiKey}` } : {}),
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),

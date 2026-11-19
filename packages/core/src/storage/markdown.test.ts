@@ -112,3 +112,24 @@ describe('MarkdownStorage', () => {
     expect(filePath).toContain('hello-world-part-2');
   });
 });
+
+// [coco] los campos de frontmatter desconocidos sobreviven a update()
+describe('MarkdownStorage · frontmatter extra (coco)', () => {
+  it('preserves unknown frontmatter keys on update', async () => {
+    const { readFileSync, writeFileSync } = await import('node:fs');
+    const matter = (await import('gray-matter')).default;
+    const filePath = storage.save(makeMeta(), 'Body');
+    const parsed = matter(readFileSync(filePath, 'utf-8'));
+    writeFileSync(
+      filePath,
+      matter.stringify(parsed.content, { ...parsed.data, channel: 'pwa-voz', captured_at: '2026-11-19T10:00:00+01:00' }),
+    );
+
+    storage.update(filePath, { category: 'ideas', tags: ['x'] });
+
+    const after = matter(readFileSync(filePath, 'utf-8')).data;
+    expect(after['channel']).toBe('pwa-voz');
+    expect(after['captured_at']).toBe('2026-11-19T10:00:00+01:00');
+    expect(after['category']).toBe('ideas');
+  });
+});

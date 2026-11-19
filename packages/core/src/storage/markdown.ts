@@ -52,6 +52,16 @@ function metadataToFrontmatter(meta: NoteMetadata): Record<string, unknown> {
   return fm;
 }
 
+// [coco] Campos de frontmatter que EchOS gestiona; el resto se conserva al reescribir.
+const KNOWN_FRONTMATTER_KEYS = new Set([
+  'id', 'type', 'title', 'created', 'updated', 'tags', 'links', 'category',
+  'source_url', 'author', 'gist', 'status', 'inputSource', 'deletedAt',
+]);
+
+function extraFrontmatter(data: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(data).filter(([k]) => !KNOWN_FRONTMATTER_KEYS.has(k)));
+}
+
 function frontmatterToMetadata(data: Record<string, unknown>): NoteMetadata {
   const meta: NoteMetadata = {
     id: data['id'] as string,
@@ -160,7 +170,9 @@ export function createMarkdownStorage(baseDir: string, logger: Logger): Markdown
       };
       const content = newContent ?? existing.content;
 
-      const fm = metadataToFrontmatter(metadata);
+      // [coco] conservar campos de frontmatter desconocidos (id de cliente, channel, captured_at...)
+      const extra = extraFrontmatter(matter(readFileSync(filePath, 'utf-8')).data);
+      const fm = { ...extra, ...metadataToFrontmatter(metadata) };
       const fileContent = matter.stringify(content, fm);
       writeFileSync(filePath, fileContent, 'utf-8');
 
